@@ -1,0 +1,815 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="Keywords" content="blog"/>
+    <meta name="Description" content="blog"/>
+    <title>Simple</title>
+    <link rel="shortcut icon" href="/static/favicon.png"/>
+    <link rel="stylesheet" type="text/css" href="/main.css" />
+</head>
+<body>
+<div class="main">
+    <div class="header">
+        <ul id="pages">
+            <li><a href="/">home</a></li>
+            <li><a href="/#/tags">tags</a></li>
+            <li><a href="/#/archive">archive</a></li>
+        </ul>
+    </div>
+    <div class="wrap-header">
+    <h1>
+    <a href="/" id="title"></a>
+    </h1>
+    </div>
+<div id="md" style="display: none;">
+<!-- markdown -->
+当你在pecl.php.net上面下载一个扩展。当你打开的里面的代码，你是不是发现有很多的ZEND_FUNCTIOIN(funcName)和ZEND_METHOD(className, methodName) 有点困惑？和c里面定义函数不一样？ 想知道答案，打开http://www.php.net 下载php的源码包。下载完成后解压，cd 到php源码目录里面。然后打开Zend/zend_API.h。跳转到63行:
+```c
+#define ZEND_NS_NAME(ns, name)          ns "\\" name
+
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)       void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)             ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+```
+这就是ZEND_FUNCTION和ZEND_METHOD宏的定义了。现在还缺INTERNAL_FUNCTION_PARAMETERS宏的定义。这个宏的定义在Zend/zend.h文件中的290行。
+```
+#define INTERNAL_FUNCTION_PARAMETERS int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC
+```
+如果你想有更直观的认识。你可以创建一个example.c文件:
+```c
+#define INTERNAL_FUNCTION_PARAMETERS int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC
+#define ZEND_NS_NAME(ns, name)          ns "\\" name
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)       void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)             ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+
+ZEND_FUNCTION(example)
+{
+    
+}
+
+ZEND_METHOD(myClass, __construct)
+{
+    
+}
+```
+然后使用 gcc -o example.info -E example.c && vim example.info。你将会看到:
+```c
+# 1 "example.c"
+# 1 "<built-in>" 1
+# 1 "<built-in>" 3
+# 325 "<built-in>" 3
+# 1 "<command line>" 1
+# 1 "<built-in>" 2
+# 1 "example.c" 2
+
+void zif_example(int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC)
+{
+
+}
+
+void zim_myClass___construct(int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC)
+{
+
+}
+```
+通过example.info，我想你已经知道了为什么要定义这么多宏了。像这种宏，在php源码里面还有很多很多，多得数不过来。下面就列出一些在php扩展开发中常用的宏和宏的定义。所有宏的定义都来自php 5.6.14。
+
+### Zend/zend.h
+```c
+#define IS_NULL     0
+#define IS_LONG     1
+#define IS_DOUBLE   2
+#define IS_BOOL     3
+#define IS_ARRAY    4
+#define IS_OBJECT   5
+#define IS_STRING   6
+#define IS_RESOURCE 7
+#define IS_CONSTANT 8
+#define IS_CONSTANT_AST 9
+#define IS_CALLABLE 10
+
+#define IS_CONSTANT_TYPE_MASK       0x00f
+#define IS_CONSTANT_UNQUALIFIED     0x010
+#define IS_LEXICAL_VAR              0x020
+#define IS_LEXICAL_REF              0x040
+#define IS_CONSTANT_IN_NAMESPACE    0x100
+```
+
+### Zend/zend_API.h
+```c
+#define ZEND_NS_NAME(ns, name)          ns "\\" name
+
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)       void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)             ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+
+#define getThis() (this_ptr)
+
+#define WRONG_PARAM_COUNT                   ZEND_WRONG_PARAM_COUNT()
+#define WRONG_PARAM_COUNT_WITH_RETVAL(ret)  ZEND_WRONG_PARAM_COUNT_WITH_RETVAL(ret)
+#define ARG_COUNT(dummy)    (ht)
+#define ZEND_NUM_ARGS()     (ht)
+#define ZEND_WRONG_PARAM_COUNT()                    { zend_wrong_param_count(TSRMLS_C); return; }
+#define ZEND_WRONG_PARAM_COUNT_WITH_RETVAL(ret)     { zend_wrong_param_count(TSRMLS_C); return ret; }
+
+#define array_init(arg)         _array_init((arg), 0 ZEND_FILE_LINE_CC)
+#define array_init_size(arg, size) _array_init((arg), (size) ZEND_FILE_LINE_CC)
+#define object_init(arg)        _object_init((arg) ZEND_FILE_LINE_CC TSRMLS_CC)
+#define object_init_ex(arg, ce) _object_init_ex((arg), (ce) ZEND_FILE_LINE_CC TSRMLS_CC)
+#define object_and_properties_init(arg, ce, properties) _object_and_properties_init((arg), (ce), (properties) ZEND_FILE_LINE_CC TSRMLS_CC)
+
+#define ZEND_ARG_INFO(pass_by_ref, name)                            { #name, sizeof(#name)-1, NULL, 0, 0, pass_by_ref, 0, 0 },
+#define ZEND_ARG_PASS_INFO(pass_by_ref)                             { NULL, 0, NULL, 0, 0, pass_by_ref, 0, 0 },
+#define ZEND_ARG_OBJ_INFO(pass_by_ref, name, classname, allow_null) { #name, sizeof(#name)-1, #classname, sizeof(#classname)-1, IS_OBJECT, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_ARRAY_INFO(pass_by_ref, name, allow_null) { #name, sizeof(#name)-1, NULL, 0, IS_ARRAY, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_TYPE_INFO(pass_by_ref, name, type_hint, allow_null) { #name, sizeof(#name)-1, NULL, 0, type_hint, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_VARIADIC_INFO(pass_by_ref, name)                   { #name, sizeof(#name)-1, NULL, 0, 0, pass_by_ref, 0, 1 },
+
+#define add_property_long(__arg, __key, __n) add_property_long_ex(__arg, __key, strlen(__key)+1, __n TSRMLS_CC)
+#define add_property_null(__arg, __key) add_property_null_ex(__arg, __key, strlen(__key) + 1 TSRMLS_CC)
+#define add_property_bool(__arg, __key, __b) add_property_bool_ex(__arg, __key, strlen(__key)+1, __b TSRMLS_CC)
+#define add_property_resource(__arg, __key, __r) add_property_resource_ex(__arg, __key, strlen(__key)+1, __r TSRMLS_CC)
+#define add_property_double(__arg, __key, __d) add_property_double_ex(__arg, __key, strlen(__key)+1, __d TSRMLS_CC)
+#define add_property_string(__arg, __key, __str, __duplicate) add_property_string_ex(__arg, __key, strlen(__key)+1, __str, __duplicate TSRMLS_CC)
+#define add_property_stringl(__arg, __key, __str, __length, __duplicate) add_property_stringl_ex(__arg, __key, strlen(__key)+1, __str, __length, __duplicate TSRMLS_CC)
+#define add_property_zval(__arg, __key, __value) add_property_zval_ex(__arg, __key, strlen(__key)+1, __value TSRMLS_CC)
+
+#define ZVAL_RESOURCE(z, l) do {    \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = l;          \
+        Z_TYPE_P(__z) = IS_RESOURCE;\
+    } while (0)
+
+#define ZVAL_BOOL(z, b) do {        \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = ((b) != 0); \
+        Z_TYPE_P(__z) = IS_BOOL;    \
+    } while (0)
+
+#define ZVAL_NULL(z) {              \
+        Z_TYPE_P(z) = IS_NULL;      \
+    }
+
+#define ZVAL_LONG(z, l) {           \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = l;          \
+        Z_TYPE_P(__z) = IS_LONG;    \
+    }
+
+#define ZVAL_DOUBLE(z, d) {         \
+        zval *__z = (z);            \
+        Z_DVAL_P(__z) = d;          \
+        Z_TYPE_P(__z) = IS_DOUBLE;  \
+    }
+
+#define ZVAL_STRING(z, s, duplicate) do {   \
+        const char *__s=(s);                \
+        zval *__z = (z);                    \
+        Z_STRLEN_P(__z) = strlen(__s);      \
+        Z_STRVAL_P(__z) = (duplicate?estrndup(__s, Z_STRLEN_P(__z)):(char*)__s);\
+        Z_TYPE_P(__z) = IS_STRING;          \
+    } while (0)
+
+#define ZVAL_STRINGL(z, s, l, duplicate) do {   \
+        const char *__s=(s); int __l=l;         \
+        zval *__z = (z);                        \
+        Z_STRLEN_P(__z) = __l;                  \
+        Z_STRVAL_P(__z) = (duplicate?estrndup(__s, __l):(char*)__s);\
+        Z_TYPE_P(__z) = IS_STRING;              \
+    } while (0)
+
+#define ZVAL_EMPTY_STRING(z) do {   \
+        zval *__z = (z);            \
+        Z_STRLEN_P(__z) = 0;        \
+        Z_STRVAL_P(__z) = STR_EMPTY_ALLOC();\
+        Z_TYPE_P(__z) = IS_STRING;  \
+    } while (0)
+
+#define ZVAL_ZVAL(z, zv, copy, dtor) do {       \
+        zval *__z = (z);                        \
+        zval *__zv = (zv);                      \
+        ZVAL_COPY_VALUE(__z, __zv);             \
+        if (copy) {                             \
+            zval_copy_ctor(__z);                \
+        }                                       \
+        if (dtor) {                             \
+            if (!copy) {                        \
+                ZVAL_NULL(__zv);                \
+            }                                   \
+            zval_ptr_dtor(&__zv);               \
+        }                                       \
+    } while (0)
+
+#define ZVAL_FALSE(z)                   ZVAL_BOOL(z, 0)
+#define ZVAL_TRUE(z)                    ZVAL_BOOL(z, 1)
+
+#define RETVAL_RESOURCE(l)              ZVAL_RESOURCE(return_value, l)
+#define RETVAL_BOOL(b)                  ZVAL_BOOL(return_value, b)
+#define RETVAL_NULL()                   ZVAL_NULL(return_value)
+#define RETVAL_LONG(l)                  ZVAL_LONG(return_value, l)
+#define RETVAL_DOUBLE(d)                ZVAL_DOUBLE(return_value, d)
+#define RETVAL_STRING(s, duplicate)         ZVAL_STRING(return_value, s, duplicate)
+#define RETVAL_STRINGL(s, l, duplicate)     ZVAL_STRINGL(return_value, s, l, duplicate)
+#define RETVAL_EMPTY_STRING()           ZVAL_EMPTY_STRING(return_value)
+#define RETVAL_ZVAL(zv, copy, dtor)     ZVAL_ZVAL(return_value, zv, copy, dtor)
+#define RETVAL_FALSE                    ZVAL_BOOL(return_value, 0)
+#define RETVAL_TRUE                     ZVAL_BOOL(return_value, 1)
+
+#define RETURN_RESOURCE(l)              { RETVAL_RESOURCE(l); return; }
+#define RETURN_BOOL(b)                  { RETVAL_BOOL(b); return; }
+#define RETURN_NULL()                   { RETVAL_NULL(); return;}
+#define RETURN_LONG(l)                  { RETVAL_LONG(l); return; }
+#define RETURN_DOUBLE(d)                { RETVAL_DOUBLE(d); return; }
+#define RETURN_STRING(s, duplicate)     { RETVAL_STRING(s, duplicate); return; }
+#define RETURN_STRINGL(s, l, duplicate) { RETVAL_STRINGL(s, l, duplicate); return; }
+#define RETURN_EMPTY_STRING()           { RETVAL_EMPTY_STRING(); return; }
+#define RETURN_ZVAL(zv, copy, dtor)     { RETVAL_ZVAL(zv, copy, dtor); return; }
+#define RETURN_FALSE                    { RETVAL_FALSE; return; }
+#define RETURN_TRUE                     { RETVAL_TRUE; return; }
+
+#define RETVAL_ZVAL_FAST(z) do {      \
+    zval *_z = (z);                   \
+    if (Z_ISREF_P(_z)) {              \
+        RETVAL_ZVAL(_z, 1, 0);        \
+    } else {                          \
+        zval_ptr_dtor(&return_value); \
+        Z_ADDREF_P(_z);               \
+        *return_value_ptr = _z;       \
+    }                                 \
+} while (0)
+
+/* For compatibility */
+#define ZEND_MINIT          ZEND_MODULE_STARTUP_N
+#define ZEND_MSHUTDOWN      ZEND_MODULE_SHUTDOWN_N
+#define ZEND_RINIT          ZEND_MODULE_ACTIVATE_N
+#define ZEND_RSHUTDOWN      ZEND_MODULE_DEACTIVATE_N
+#define ZEND_MINFO          ZEND_MODULE_INFO_N
+#define ZEND_GINIT(module)      ((void (*)(void* TSRMLS_DC))(ZEND_MODULE_GLOBALS_CTOR_N(module)))
+#define ZEND_GSHUTDOWN(module)  ((void (*)(void* TSRMLS_DC))(ZEND_MODULE_GLOBALS_DTOR_N(module)))
+
+#define ZEND_MINIT_FUNCTION         ZEND_MODULE_STARTUP_D
+#define ZEND_MSHUTDOWN_FUNCTION     ZEND_MODULE_SHUTDOWN_D
+#define ZEND_RINIT_FUNCTION         ZEND_MODULE_ACTIVATE_D
+#define ZEND_RSHUTDOWN_FUNCTION     ZEND_MODULE_DEACTIVATE_D
+#define ZEND_MINFO_FUNCTION         ZEND_MODULE_INFO_D
+#define ZEND_GINIT_FUNCTION         ZEND_MODULE_GLOBALS_CTOR_D
+#define ZEND_GSHUTDOWN_FUNCTION     ZEND_MODULE_GLOBALS_DTOR_D
+```
+## Zend/zend_operators.h
+```c
+#define Z_LVAL(zval)            (zval).value.lval
+#define Z_BVAL(zval)            ((zend_bool)(zval).value.lval)
+#define Z_DVAL(zval)            (zval).value.dval
+#define Z_STRVAL(zval)          (zval).value.str.val
+#define Z_STRLEN(zval)          (zval).value.str.len
+#define Z_ARRVAL(zval)          (zval).value.ht
+#define Z_AST(zval)         (zval).value.ast
+#define Z_OBJVAL(zval)          (zval).value.obj
+#define Z_OBJ_HANDLE(zval)      Z_OBJVAL(zval).handle
+#define Z_OBJ_HT(zval)          Z_OBJVAL(zval).handlers
+#define Z_OBJCE(zval)           zend_get_class_entry(&(zval) TSRMLS_CC)
+#define Z_OBJPROP(zval)         Z_OBJ_HT((zval))->get_properties(&(zval) TSRMLS_CC)
+#define Z_OBJ_HANDLER(zval, hf) Z_OBJ_HT((zval))->hf
+#define Z_RESVAL(zval)          (zval).value.lval
+#define Z_OBJDEBUG(zval,is_tmp) (Z_OBJ_HANDLER((zval),get_debug_info)?Z_OBJ_HANDLER((zval),get_debug_info)(&(zval),&is_tmp TSRMLS_CC):(is_tmp=0,Z_OBJ_HANDLER((zval),get_properties)?Z_OBJPROP(zval):NULL))
+
+#define Z_LVAL_P(zval_p)        Z_LVAL(*zval_p)
+#define Z_BVAL_P(zval_p)        Z_BVAL(*zval_p)
+#define Z_DVAL_P(zval_p)        Z_DVAL(*zval_p)
+#define Z_STRVAL_P(zval_p)      Z_STRVAL(*zval_p)
+#define Z_STRLEN_P(zval_p)      Z_STRLEN(*zval_p)
+#define Z_ARRVAL_P(zval_p)      Z_ARRVAL(*zval_p)
+#define Z_AST_P(zval_p)         Z_AST(*zval_p)
+#define Z_OBJPROP_P(zval_p)     Z_OBJPROP(*zval_p)
+#define Z_OBJCE_P(zval_p)       Z_OBJCE(*zval_p)
+#define Z_RESVAL_P(zval_p)      Z_RESVAL(*zval_p)
+#define Z_OBJVAL_P(zval_p)      Z_OBJVAL(*zval_p)
+#define Z_OBJ_HANDLE_P(zval_p)  Z_OBJ_HANDLE(*zval_p)
+#define Z_OBJ_HT_P(zval_p)      Z_OBJ_HT(*zval_p)
+#define Z_OBJ_HANDLER_P(zval_p, h)  Z_OBJ_HANDLER(*zval_p, h)
+#define Z_OBJDEBUG_P(zval_p,is_tmp) Z_OBJDEBUG(*zval_p,is_tmp)
+
+#define Z_LVAL_PP(zval_pp)      Z_LVAL(**zval_pp)
+#define Z_BVAL_PP(zval_pp)      Z_BVAL(**zval_pp)
+#define Z_DVAL_PP(zval_pp)      Z_DVAL(**zval_pp)
+#define Z_STRVAL_PP(zval_pp)    Z_STRVAL(**zval_pp)
+#define Z_STRLEN_PP(zval_pp)    Z_STRLEN(**zval_pp)
+#define Z_ARRVAL_PP(zval_pp)    Z_ARRVAL(**zval_pp)
+#define Z_AST_PP(zval_p)        Z_AST(**zval_p)
+#define Z_OBJPROP_PP(zval_pp)   Z_OBJPROP(**zval_pp)
+#define Z_OBJCE_PP(zval_pp)     Z_OBJCE(**zval_pp)
+#define Z_RESVAL_PP(zval_pp)    Z_RESVAL(**zval_pp)
+#define Z_OBJVAL_PP(zval_pp)    Z_OBJVAL(**zval_pp)
+#define Z_OBJ_HANDLE_PP(zval_p) Z_OBJ_HANDLE(**zval_p)
+#define Z_OBJ_HT_PP(zval_p)     Z_OBJ_HT(**zval_p)
+#define Z_OBJ_HANDLER_PP(zval_p, h)     Z_OBJ_HANDLER(**zval_p, h)
+#define Z_OBJDEBUG_PP(zval_pp,is_tmp)   Z_OBJDEBUG(**zval_pp,is_tmp)
+
+#define Z_TYPE(zval)        (zval).type
+#define Z_TYPE_P(zval_p)    Z_TYPE(*zval_p)
+#define Z_TYPE_PP(zval_pp)  Z_TYPE(**zval_pp)
+```
+### main/php.h
+```c
+/* PHP-named Zend macro wrappers */
+#define PHP_FN                  ZEND_FN
+#define PHP_MN                  ZEND_MN
+#define PHP_NAMED_FUNCTION      ZEND_NAMED_FUNCTION
+#define PHP_FUNCTION            ZEND_FUNCTION
+#define PHP_METHOD              ZEND_METHOD
+
+#define PHP_RAW_NAMED_FE ZEND_RAW_NAMED_FE
+#define PHP_NAMED_FE    ZEND_NAMED_FE
+#define PHP_FE          ZEND_FE
+#define PHP_DEP_FE      ZEND_DEP_FE
+#define PHP_FALIAS      ZEND_FALIAS
+#define PHP_DEP_FALIAS  ZEND_DEP_FALIAS
+#define PHP_ME          ZEND_ME
+#define PHP_MALIAS      ZEND_MALIAS
+#define PHP_ABSTRACT_ME ZEND_ABSTRACT_ME
+#define PHP_ME_MAPPING  ZEND_ME_MAPPING
+#define PHP_FE_END      ZEND_FE_END
+
+#define PHP_MODULE_STARTUP_N    ZEND_MODULE_STARTUP_N
+#define PHP_MODULE_SHUTDOWN_N   ZEND_MODULE_SHUTDOWN_N
+#define PHP_MODULE_ACTIVATE_N   ZEND_MODULE_ACTIVATE_N
+#define PHP_MODULE_DEACTIVATE_N ZEND_MODULE_DEACTIVATE_N
+#define PHP_MODULE_INFO_N       ZEND_MODULE_INFO_N
+
+#define PHP_MODULE_STARTUP_D    ZEND_MODULE_STARTUP_D
+#define PHP_MODULE_SHUTDOWN_D   ZEND_MODULE_SHUTDOWN_D
+#define PHP_MODULE_ACTIVATE_D   ZEND_MODULE_ACTIVATE_D
+#define PHP_MODULE_DEACTIVATE_D ZEND_MODULE_DEACTIVATE_D
+#define PHP_MODULE_INFO_D       ZEND_MODULE_INFO_D
+
+/* Compatibility macros */
+#define PHP_MINIT       ZEND_MODULE_STARTUP_N
+#define PHP_MSHUTDOWN   ZEND_MODULE_SHUTDOWN_N
+#define PHP_RINIT       ZEND_MODULE_ACTIVATE_N
+#define PHP_RSHUTDOWN   ZEND_MODULE_DEACTIVATE_N
+#define PHP_MINFO       ZEND_MODULE_INFO_N
+#define PHP_GINIT       ZEND_GINIT
+#define PHP_GSHUTDOWN   ZEND_GSHUTDOWN
+
+#define PHP_MINIT_FUNCTION      ZEND_MODULE_STARTUP_D
+#define PHP_MSHUTDOWN_FUNCTION  ZEND_MODULE_SHUTDOWN_D
+#define PHP_RINIT_FUNCTION      ZEND_MODULE_ACTIVATE_D
+#define PHP_RSHUTDOWN_FUNCTION  ZEND_MODULE_DEACTIVATE_D
+#define PHP_MINFO_FUNCTION      ZEND_MODULE_INFO_D
+#define PHP_GINIT_FUNCTION      ZEND_GINIT_FUNCTION
+#define PHP_GSHUTDOWN_FUNCTION  ZEND_GSHUTDOWN_FUNCTION
+ 
+#define PHP_MODULE_GLOBALS      ZEND_MODULE_GLOBALS
+```
+
+上面这些宏仅仅是php源码里面的1%不到。希望能对php扩展有兴趣的人，能够提供一点点帮助。第一次写技术类的文章，还请多包含。
+
+### 参考资料
+- [www.php-internals.com](http://www.php-internals.com/)
+- [walu.cc](http://walu.cc/phpbook/)
+- [www.laruence.com](http://www.laruence.com/)
+<!-- markdown end -->
+</div>
+<div class="entry" id="main">
+<!-- content -->
+<p>当你在pecl.php.net上面下载一个扩展。当你打开的里面的代码，你是不是发现有很多的ZEND<em>FUNCTIOIN(funcName)和ZEND</em>METHOD(className, methodName) 有点困惑？和c里面定义函数不一样？ 想知道答案，打开http://www.php.net 下载php的源码包。下载完成后解压，cd 到php源码目录里面。然后打开Zend/zend_API.h。跳转到63行:</p>
+
+<pre><code class="c">#define ZEND_NS_NAME(ns, name)            ns "\\" name
+
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)        void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)                ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+</code></pre>
+
+<p>这就是ZEND<em>FUNCTION和ZEND</em>METHOD宏的定义了。现在还缺INTERNAL<em>FUNCTION</em>PARAMETERS宏的定义。这个宏的定义在Zend/zend.h文件中的290行。</p>
+
+<pre><code>#define INTERNAL_FUNCTION_PARAMETERS int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC
+</code></pre>
+
+<p>如果你想有更直观的认识。你可以创建一个example.c文件:</p>
+
+<pre><code class="c">#define INTERNAL_FUNCTION_PARAMETERS int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC
+#define ZEND_NS_NAME(ns, name)          ns "\\" name
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)       void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)             ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+
+ZEND_FUNCTION(example)
+{
+
+}
+
+ZEND_METHOD(myClass, __construct)
+{
+
+}
+</code></pre>
+
+<p>然后使用 gcc -o example.info -E example.c &amp;&amp; vim example.info。你将会看到:</p>
+
+<pre><code class="c"># 1 "example.c"
+# 1 "&lt;built-in&gt;" 1
+# 1 "&lt;built-in&gt;" 3
+# 325 "&lt;built-in&gt;" 3
+# 1 "&lt;command line&gt;" 1
+# 1 "&lt;built-in&gt;" 2
+# 1 "example.c" 2
+
+void zif_example(int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC)
+{
+
+}
+
+void zim_myClass___construct(int ht, zval *return_value, zval **return_value_ptr, zval *this_ptr, int return_value_used TSRMLS_DC)
+{
+
+}
+</code></pre>
+
+<p>通过example.info，我想你已经知道了为什么要定义这么多宏了。像这种宏，在php源码里面还有很多很多，多得数不过来。下面就列出一些在php扩展开发中常用的宏和宏的定义。所有宏的定义都来自php 5.6.14。</p>
+
+<h3 id="zendzendh">Zend/zend.h</h3>
+
+<pre><code class="c">#define IS_NULL        0
+#define IS_LONG        1
+#define IS_DOUBLE    2
+#define IS_BOOL        3
+#define IS_ARRAY    4
+#define IS_OBJECT    5
+#define IS_STRING    6
+#define IS_RESOURCE    7
+#define IS_CONSTANT    8
+#define IS_CONSTANT_AST    9
+#define IS_CALLABLE    10
+
+#define IS_CONSTANT_TYPE_MASK        0x00f
+#define IS_CONSTANT_UNQUALIFIED        0x010
+#define IS_LEXICAL_VAR                0x020
+#define IS_LEXICAL_REF                0x040
+#define IS_CONSTANT_IN_NAMESPACE    0x100
+</code></pre>
+
+<h3 id="zendzend_apih">Zend/zend_API.h</h3>
+
+<pre><code class="c">#define ZEND_NS_NAME(ns, name)            ns "\\" name
+
+#define ZEND_FN(name) zif_##name
+#define ZEND_MN(name) zim_##name
+#define ZEND_NAMED_FUNCTION(name)        void name(INTERNAL_FUNCTION_PARAMETERS)
+#define ZEND_FUNCTION(name)                ZEND_NAMED_FUNCTION(ZEND_FN(name))
+#define ZEND_METHOD(classname, name)    ZEND_NAMED_FUNCTION(ZEND_MN(classname##_##name))
+
+#define getThis() (this_ptr)
+
+#define WRONG_PARAM_COUNT                    ZEND_WRONG_PARAM_COUNT()
+#define WRONG_PARAM_COUNT_WITH_RETVAL(ret)    ZEND_WRONG_PARAM_COUNT_WITH_RETVAL(ret)
+#define ARG_COUNT(dummy)    (ht)
+#define ZEND_NUM_ARGS()        (ht)
+#define ZEND_WRONG_PARAM_COUNT()                    { zend_wrong_param_count(TSRMLS_C); return; }
+#define ZEND_WRONG_PARAM_COUNT_WITH_RETVAL(ret)        { zend_wrong_param_count(TSRMLS_C); return ret; }
+
+#define array_init(arg)            _array_init((arg), 0 ZEND_FILE_LINE_CC)
+#define array_init_size(arg, size) _array_init((arg), (size) ZEND_FILE_LINE_CC)
+#define object_init(arg)        _object_init((arg) ZEND_FILE_LINE_CC TSRMLS_CC)
+#define object_init_ex(arg, ce)    _object_init_ex((arg), (ce) ZEND_FILE_LINE_CC TSRMLS_CC)
+#define object_and_properties_init(arg, ce, properties)    _object_and_properties_init((arg), (ce), (properties) ZEND_FILE_LINE_CC TSRMLS_CC)
+
+#define ZEND_ARG_INFO(pass_by_ref, name)                            { #name, sizeof(#name)-1, NULL, 0, 0, pass_by_ref, 0, 0 },
+#define ZEND_ARG_PASS_INFO(pass_by_ref)                                { NULL, 0, NULL, 0, 0, pass_by_ref, 0, 0 },
+#define ZEND_ARG_OBJ_INFO(pass_by_ref, name, classname, allow_null) { #name, sizeof(#name)-1, #classname, sizeof(#classname)-1, IS_OBJECT, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_ARRAY_INFO(pass_by_ref, name, allow_null) { #name, sizeof(#name)-1, NULL, 0, IS_ARRAY, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_TYPE_INFO(pass_by_ref, name, type_hint, allow_null) { #name, sizeof(#name)-1, NULL, 0, type_hint, pass_by_ref, allow_null, 0 },
+#define ZEND_ARG_VARIADIC_INFO(pass_by_ref, name)                     { #name, sizeof(#name)-1, NULL, 0, 0, pass_by_ref, 0, 1 },
+
+#define add_property_long(__arg, __key, __n) add_property_long_ex(__arg, __key, strlen(__key)+1, __n TSRMLS_CC)
+#define add_property_null(__arg, __key) add_property_null_ex(__arg, __key, strlen(__key) + 1 TSRMLS_CC)
+#define add_property_bool(__arg, __key, __b) add_property_bool_ex(__arg, __key, strlen(__key)+1, __b TSRMLS_CC)
+#define add_property_resource(__arg, __key, __r) add_property_resource_ex(__arg, __key, strlen(__key)+1, __r TSRMLS_CC)
+#define add_property_double(__arg, __key, __d) add_property_double_ex(__arg, __key, strlen(__key)+1, __d TSRMLS_CC)
+#define add_property_string(__arg, __key, __str, __duplicate) add_property_string_ex(__arg, __key, strlen(__key)+1, __str, __duplicate TSRMLS_CC)
+#define add_property_stringl(__arg, __key, __str, __length, __duplicate) add_property_stringl_ex(__arg, __key, strlen(__key)+1, __str, __length, __duplicate TSRMLS_CC)
+#define add_property_zval(__arg, __key, __value) add_property_zval_ex(__arg, __key, strlen(__key)+1, __value TSRMLS_CC)
+
+#define ZVAL_RESOURCE(z, l) do {    \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = l;          \
+        Z_TYPE_P(__z) = IS_RESOURCE;\
+    } while (0)
+
+#define ZVAL_BOOL(z, b) do {        \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = ((b) != 0); \
+        Z_TYPE_P(__z) = IS_BOOL;    \
+    } while (0)
+
+#define ZVAL_NULL(z) {                \
+        Z_TYPE_P(z) = IS_NULL;      \
+    }
+
+#define ZVAL_LONG(z, l) {            \
+        zval *__z = (z);            \
+        Z_LVAL_P(__z) = l;          \
+        Z_TYPE_P(__z) = IS_LONG;    \
+    }
+
+#define ZVAL_DOUBLE(z, d) {            \
+        zval *__z = (z);            \
+        Z_DVAL_P(__z) = d;          \
+        Z_TYPE_P(__z) = IS_DOUBLE;  \
+    }
+
+#define ZVAL_STRING(z, s, duplicate) do {    \
+        const char *__s=(s);                \
+        zval *__z = (z);                    \
+        Z_STRLEN_P(__z) = strlen(__s);      \
+        Z_STRVAL_P(__z) = (duplicate?estrndup(__s, Z_STRLEN_P(__z)):(char*)__s);\
+        Z_TYPE_P(__z) = IS_STRING;          \
+    } while (0)
+
+#define ZVAL_STRINGL(z, s, l, duplicate) do {    \
+        const char *__s=(s); int __l=l;         \
+        zval *__z = (z);                        \
+        Z_STRLEN_P(__z) = __l;                  \
+        Z_STRVAL_P(__z) = (duplicate?estrndup(__s, __l):(char*)__s);\
+        Z_TYPE_P(__z) = IS_STRING;              \
+    } while (0)
+
+#define ZVAL_EMPTY_STRING(z) do {    \
+        zval *__z = (z);            \
+        Z_STRLEN_P(__z) = 0;        \
+        Z_STRVAL_P(__z) = STR_EMPTY_ALLOC();\
+        Z_TYPE_P(__z) = IS_STRING;  \
+    } while (0)
+
+#define ZVAL_ZVAL(z, zv, copy, dtor) do {        \
+        zval *__z = (z);                        \
+        zval *__zv = (zv);                      \
+        ZVAL_COPY_VALUE(__z, __zv);             \
+        if (copy) {                             \
+            zval_copy_ctor(__z);                \
+        }                                       \
+        if (dtor) {                             \
+            if (!copy) {                        \
+                ZVAL_NULL(__zv);                \
+            }                                   \
+            zval_ptr_dtor(&amp;__zv);               \
+        }                                       \
+    } while (0)
+
+#define ZVAL_FALSE(z)                      ZVAL_BOOL(z, 0)
+#define ZVAL_TRUE(z)                      ZVAL_BOOL(z, 1)
+
+#define RETVAL_RESOURCE(l)                ZVAL_RESOURCE(return_value, l)
+#define RETVAL_BOOL(b)                    ZVAL_BOOL(return_value, b)
+#define RETVAL_NULL()                     ZVAL_NULL(return_value)
+#define RETVAL_LONG(l)                     ZVAL_LONG(return_value, l)
+#define RETVAL_DOUBLE(d)                 ZVAL_DOUBLE(return_value, d)
+#define RETVAL_STRING(s, duplicate)         ZVAL_STRING(return_value, s, duplicate)
+#define RETVAL_STRINGL(s, l, duplicate)     ZVAL_STRINGL(return_value, s, l, duplicate)
+#define RETVAL_EMPTY_STRING()             ZVAL_EMPTY_STRING(return_value)
+#define RETVAL_ZVAL(zv, copy, dtor)        ZVAL_ZVAL(return_value, zv, copy, dtor)
+#define RETVAL_FALSE                      ZVAL_BOOL(return_value, 0)
+#define RETVAL_TRUE                       ZVAL_BOOL(return_value, 1)
+
+#define RETURN_RESOURCE(l)                 { RETVAL_RESOURCE(l); return; }
+#define RETURN_BOOL(b)                     { RETVAL_BOOL(b); return; }
+#define RETURN_NULL()                     { RETVAL_NULL(); return;}
+#define RETURN_LONG(l)                     { RETVAL_LONG(l); return; }
+#define RETURN_DOUBLE(d)                 { RETVAL_DOUBLE(d); return; }
+#define RETURN_STRING(s, duplicate)     { RETVAL_STRING(s, duplicate); return; }
+#define RETURN_STRINGL(s, l, duplicate) { RETVAL_STRINGL(s, l, duplicate); return; }
+#define RETURN_EMPTY_STRING()             { RETVAL_EMPTY_STRING(); return; }
+#define RETURN_ZVAL(zv, copy, dtor)        { RETVAL_ZVAL(zv, copy, dtor); return; }
+#define RETURN_FALSE                      { RETVAL_FALSE; return; }
+#define RETURN_TRUE                       { RETVAL_TRUE; return; }
+
+#define RETVAL_ZVAL_FAST(z) do {      \
+    zval *_z = (z);                   \
+    if (Z_ISREF_P(_z)) {              \
+        RETVAL_ZVAL(_z, 1, 0);        \
+    } else {                          \
+        zval_ptr_dtor(&amp;return_value); \
+        Z_ADDREF_P(_z);               \
+        *return_value_ptr = _z;       \
+    }                                 \
+} while (0)
+
+/* For compatibility */
+#define ZEND_MINIT            ZEND_MODULE_STARTUP_N
+#define ZEND_MSHUTDOWN        ZEND_MODULE_SHUTDOWN_N
+#define ZEND_RINIT            ZEND_MODULE_ACTIVATE_N
+#define ZEND_RSHUTDOWN        ZEND_MODULE_DEACTIVATE_N
+#define ZEND_MINFO            ZEND_MODULE_INFO_N
+#define ZEND_GINIT(module)        ((void (*)(void* TSRMLS_DC))(ZEND_MODULE_GLOBALS_CTOR_N(module)))
+#define ZEND_GSHUTDOWN(module)    ((void (*)(void* TSRMLS_DC))(ZEND_MODULE_GLOBALS_DTOR_N(module)))
+
+#define ZEND_MINIT_FUNCTION            ZEND_MODULE_STARTUP_D
+#define ZEND_MSHUTDOWN_FUNCTION        ZEND_MODULE_SHUTDOWN_D
+#define ZEND_RINIT_FUNCTION            ZEND_MODULE_ACTIVATE_D
+#define ZEND_RSHUTDOWN_FUNCTION        ZEND_MODULE_DEACTIVATE_D
+#define ZEND_MINFO_FUNCTION            ZEND_MODULE_INFO_D
+#define ZEND_GINIT_FUNCTION            ZEND_MODULE_GLOBALS_CTOR_D
+#define ZEND_GSHUTDOWN_FUNCTION        ZEND_MODULE_GLOBALS_DTOR_D
+</code></pre>
+
+<h2 id="zendzend_operatorsh">Zend/zend_operators.h</h2>
+
+<pre><code class="c">#define Z_LVAL(zval)            (zval).value.lval
+#define Z_BVAL(zval)            ((zend_bool)(zval).value.lval)
+#define Z_DVAL(zval)            (zval).value.dval
+#define Z_STRVAL(zval)            (zval).value.str.val
+#define Z_STRLEN(zval)            (zval).value.str.len
+#define Z_ARRVAL(zval)            (zval).value.ht
+#define Z_AST(zval)            (zval).value.ast
+#define Z_OBJVAL(zval)            (zval).value.obj
+#define Z_OBJ_HANDLE(zval)        Z_OBJVAL(zval).handle
+#define Z_OBJ_HT(zval)            Z_OBJVAL(zval).handlers
+#define Z_OBJCE(zval)            zend_get_class_entry(&amp;(zval) TSRMLS_CC)
+#define Z_OBJPROP(zval)            Z_OBJ_HT((zval))-&gt;get_properties(&amp;(zval) TSRMLS_CC)
+#define Z_OBJ_HANDLER(zval, hf) Z_OBJ_HT((zval))-&gt;hf
+#define Z_RESVAL(zval)            (zval).value.lval
+#define Z_OBJDEBUG(zval,is_tmp)    (Z_OBJ_HANDLER((zval),get_debug_info)?Z_OBJ_HANDLER((zval),get_debug_info)(&amp;(zval),&amp;is_tmp TSRMLS_CC):(is_tmp=0,Z_OBJ_HANDLER((zval),get_properties)?Z_OBJPROP(zval):NULL))
+
+#define Z_LVAL_P(zval_p)        Z_LVAL(*zval_p)
+#define Z_BVAL_P(zval_p)        Z_BVAL(*zval_p)
+#define Z_DVAL_P(zval_p)        Z_DVAL(*zval_p)
+#define Z_STRVAL_P(zval_p)        Z_STRVAL(*zval_p)
+#define Z_STRLEN_P(zval_p)        Z_STRLEN(*zval_p)
+#define Z_ARRVAL_P(zval_p)        Z_ARRVAL(*zval_p)
+#define Z_AST_P(zval_p)            Z_AST(*zval_p)
+#define Z_OBJPROP_P(zval_p)        Z_OBJPROP(*zval_p)
+#define Z_OBJCE_P(zval_p)        Z_OBJCE(*zval_p)
+#define Z_RESVAL_P(zval_p)        Z_RESVAL(*zval_p)
+#define Z_OBJVAL_P(zval_p)        Z_OBJVAL(*zval_p)
+#define Z_OBJ_HANDLE_P(zval_p)    Z_OBJ_HANDLE(*zval_p)
+#define Z_OBJ_HT_P(zval_p)        Z_OBJ_HT(*zval_p)
+#define Z_OBJ_HANDLER_P(zval_p, h)    Z_OBJ_HANDLER(*zval_p, h)
+#define Z_OBJDEBUG_P(zval_p,is_tmp)    Z_OBJDEBUG(*zval_p,is_tmp)
+
+#define Z_LVAL_PP(zval_pp)        Z_LVAL(**zval_pp)
+#define Z_BVAL_PP(zval_pp)        Z_BVAL(**zval_pp)
+#define Z_DVAL_PP(zval_pp)        Z_DVAL(**zval_pp)
+#define Z_STRVAL_PP(zval_pp)    Z_STRVAL(**zval_pp)
+#define Z_STRLEN_PP(zval_pp)    Z_STRLEN(**zval_pp)
+#define Z_ARRVAL_PP(zval_pp)    Z_ARRVAL(**zval_pp)
+#define Z_AST_PP(zval_p)        Z_AST(**zval_p)
+#define Z_OBJPROP_PP(zval_pp)    Z_OBJPROP(**zval_pp)
+#define Z_OBJCE_PP(zval_pp)        Z_OBJCE(**zval_pp)
+#define Z_RESVAL_PP(zval_pp)    Z_RESVAL(**zval_pp)
+#define Z_OBJVAL_PP(zval_pp)    Z_OBJVAL(**zval_pp)
+#define Z_OBJ_HANDLE_PP(zval_p)    Z_OBJ_HANDLE(**zval_p)
+#define Z_OBJ_HT_PP(zval_p)        Z_OBJ_HT(**zval_p)
+#define Z_OBJ_HANDLER_PP(zval_p, h)        Z_OBJ_HANDLER(**zval_p, h)
+#define Z_OBJDEBUG_PP(zval_pp,is_tmp)    Z_OBJDEBUG(**zval_pp,is_tmp)
+
+#define Z_TYPE(zval)        (zval).type
+#define Z_TYPE_P(zval_p)    Z_TYPE(*zval_p)
+#define Z_TYPE_PP(zval_pp)    Z_TYPE(**zval_pp)
+</code></pre>
+
+<h3 id="mainphph">main/php.h</h3>
+
+<pre><code class="c">/* PHP-named Zend macro wrappers */
+#define PHP_FN                    ZEND_FN
+#define PHP_MN                    ZEND_MN
+#define PHP_NAMED_FUNCTION        ZEND_NAMED_FUNCTION
+#define PHP_FUNCTION            ZEND_FUNCTION
+#define PHP_METHOD              ZEND_METHOD
+
+#define PHP_RAW_NAMED_FE ZEND_RAW_NAMED_FE
+#define PHP_NAMED_FE    ZEND_NAMED_FE
+#define PHP_FE            ZEND_FE
+#define PHP_DEP_FE      ZEND_DEP_FE
+#define PHP_FALIAS        ZEND_FALIAS
+#define PHP_DEP_FALIAS    ZEND_DEP_FALIAS
+#define PHP_ME          ZEND_ME
+#define PHP_MALIAS      ZEND_MALIAS
+#define PHP_ABSTRACT_ME ZEND_ABSTRACT_ME
+#define PHP_ME_MAPPING  ZEND_ME_MAPPING
+#define PHP_FE_END      ZEND_FE_END
+
+#define PHP_MODULE_STARTUP_N    ZEND_MODULE_STARTUP_N
+#define PHP_MODULE_SHUTDOWN_N    ZEND_MODULE_SHUTDOWN_N
+#define PHP_MODULE_ACTIVATE_N    ZEND_MODULE_ACTIVATE_N
+#define PHP_MODULE_DEACTIVATE_N    ZEND_MODULE_DEACTIVATE_N
+#define PHP_MODULE_INFO_N        ZEND_MODULE_INFO_N
+
+#define PHP_MODULE_STARTUP_D    ZEND_MODULE_STARTUP_D
+#define PHP_MODULE_SHUTDOWN_D    ZEND_MODULE_SHUTDOWN_D
+#define PHP_MODULE_ACTIVATE_D    ZEND_MODULE_ACTIVATE_D
+#define PHP_MODULE_DEACTIVATE_D    ZEND_MODULE_DEACTIVATE_D
+#define PHP_MODULE_INFO_D        ZEND_MODULE_INFO_D
+
+/* Compatibility macros */
+#define PHP_MINIT        ZEND_MODULE_STARTUP_N
+#define PHP_MSHUTDOWN    ZEND_MODULE_SHUTDOWN_N
+#define PHP_RINIT        ZEND_MODULE_ACTIVATE_N
+#define PHP_RSHUTDOWN    ZEND_MODULE_DEACTIVATE_N
+#define PHP_MINFO        ZEND_MODULE_INFO_N
+#define PHP_GINIT        ZEND_GINIT
+#define PHP_GSHUTDOWN    ZEND_GSHUTDOWN
+
+#define PHP_MINIT_FUNCTION        ZEND_MODULE_STARTUP_D
+#define PHP_MSHUTDOWN_FUNCTION    ZEND_MODULE_SHUTDOWN_D
+#define PHP_RINIT_FUNCTION        ZEND_MODULE_ACTIVATE_D
+#define PHP_RSHUTDOWN_FUNCTION    ZEND_MODULE_DEACTIVATE_D
+#define PHP_MINFO_FUNCTION        ZEND_MODULE_INFO_D
+#define PHP_GINIT_FUNCTION        ZEND_GINIT_FUNCTION
+#define PHP_GSHUTDOWN_FUNCTION    ZEND_GSHUTDOWN_FUNCTION
+
+#define PHP_MODULE_GLOBALS        ZEND_MODULE_GLOBALS
+</code></pre>
+
+<p>上面这些宏仅仅是php源码里面的1%不到。希望能对php扩展有兴趣的人，能够提供一点点帮助。第一次写技术类的文章，还请多包含。</p>
+
+<h3 id="">参考资料</h3>
+
+<ul>
+<li><a href="http://www.php-internals.com/">www.php-internals.com</a></li>
+<li><a href="http://walu.cc/phpbook/">walu.cc</a></li>
+<li><a href="http://www.laruence.com/">www.laruence.com</a></li>
+</ul>
+<!-- content end -->
+</div>
+<br>
+<br>
+    <div id="disqus_thread"></div>
+    <div class="footer">
+        <p>© Copyright 2014 by isnowfy, Designed by isnowfy</p>
+    </div>
+</div>
+<script src="main.js"></script>
+<script id="content" type="text/mustache">
+    <h1>{{title}}</h1>
+    <div class="tag">
+    {{date}}
+    {{#tags}}
+    <a href="/#/tag/{{name}}">#{{name}}</a>
+    {{/tags}}
+    </div>
+</script>
+<script id="pagesTemplate" type="text/mustache">
+    {{#pages}}
+    <li>
+        <a href="{{path}}">{{title}}</a>
+    </li>
+    {{/pages}}
+</script>
+<script>
+$(document).ready(function() {
+    $.ajax({
+        url: "main.json",
+        type: "GET",
+        dataType: "json",
+        success: function(data) {
+            $("#title").html(data.name);
+            var pagesTemplate = Hogan.compile($("#pagesTemplate").html());
+            var pagesHtml = pagesTemplate.render({"pages": data.pages});
+            $("#pages").append(pagesHtml);
+            //path
+            var path = "php_ext_define.html";
+            //path end
+            var now = 0;
+            for (var i = 0; i < data.posts.length; ++i)
+                if (path == data.posts[i].path)
+                    now = i;
+            var post = data.posts[now];
+            var tmp = post.tags.split(" ");
+            var tags = [];
+            for (var i = 0; i < tmp.length; ++i)
+                if (tmp[i].length > 0)
+                    tags.push({"name": tmp[i]});
+            var contentTemplate = Hogan.compile($("#content").html());
+            var contentHtml = contentTemplate.render({"title": post.title, "tags": tags, "date": post.date});
+            $("#main").prepend(contentHtml);
+            if (data.disqus_shortname.length > 0) {
+                var disqus_shortname = data.disqus_shortname;
+                (function() {
+                    var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+                    dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+                    (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+                })();
+            }
+        }
+    });
+});
+</script>
+<script src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<script type="text/x-mathjax-config">
+    MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ["\\(", "\\)"]], processEscapes: true}});
+</script>
+</body>
+</html>
